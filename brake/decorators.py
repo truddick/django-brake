@@ -52,17 +52,23 @@ _backend = get_class_by_path(_backend_class)()
 
 
 def ratelimit(
-    ip=True, use_request_path=False, block=False, method=None, field=None, rate='5/m', increment=None
+    ip=True, use_request_path=False, block=False, method=None, field=None, rate='5/m', increment=None, cbv=False
 ):
     def decorator(fn):
         count, period = _split_rate(rate)
 
         @wraps(fn)
-        def _wrapped(request, *args, **kw):
-            if use_request_path:
-                func_name = request.path
+        def _wrapped(*args, **kw):
+            if cbv:
+                request = args[1]
+                func_name = "%s.%s.%s" % (args[0].__module__, args[0].__class__.__name__, fn.__name__)
             else:
-                func_name = fn.__name__
+                request = args[0]
+                if use_request_path:
+                    func_name = request.path
+                else:
+                    func_name = fn.__name__
+
             response = None
             if _method_match(request, method):
                 limits = _backend.limit(
@@ -77,7 +83,7 @@ def ratelimit(
             if response is None:
                 # If the response isn't HttpResponseTooManyRequests already, run
                 # the actual function to get the result.
-                response = fn(request, *args, **kw)
+                response = fn(*args, **kw)
 
             if _method_match(request, method) and \
                     (increment is None or (callable(increment) and increment(
